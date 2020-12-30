@@ -21,11 +21,7 @@ permu_sgn = [[0, 1, -1],
              [-1, 0, 1],
              [1, -1, 0]]
 
-pyfile = 'Ising1D_RBMSym'
-
-
-def get_idx(l, i):
-    return 3 * l + i
+pyfile = 'Ising2D_RBMSym'
 
 
 def get_mean(psi, sp_op):
@@ -42,10 +38,18 @@ if __name__ == "__main__":
     # command line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-L",
-        "--length",
+        "-L1",
+        "--side1",
         type=int,
-        help="Length of 1D spin chain"
+        default=0,
+        help="Length of the first side of 2D spin chain, i.e., total number of sites=L1*L2"
+    )
+    parser.add_argument(
+        "-L2",
+        "--side2",
+        type=int,
+        default=0,
+        help="Length of the second side of 2D spin chain, i.e., total number of sites=L1*L2"
     )
     parser.add_argument(
         "-J",
@@ -64,8 +68,8 @@ if __name__ == "__main__":
         "-t",
         "--n_iter_opt",
         type=int,
-        default=250,
-        help="number of iterations for optimizing RBM (default=250)"
+        default=300,
+        help="number of iterations for optimizing RBM (default=300)"
     )
     parser.add_argument(
         "-n",
@@ -78,8 +82,8 @@ if __name__ == "__main__":
         "-lr",
         "--sgd_lr",
         type=float,
-        default=0.05,
-        help="learning rate of SGD optimizer (default=0.05)"
+        default=0.01,
+        help="learning rate of SGD optimizer (default=0.01)"
     )
     parser.add_argument(
         "-a",
@@ -107,8 +111,8 @@ if __name__ == "__main__":
     # Tunable parameters
     ####################
 
-    L = args.length  # length of chain
-    N = L  # number of sites
+    L1, L2 = args.side1, args.side2  # side length of lattice
+    N = L1 * L2  # number of sites
     J = args.coupling  # strength of the coupling
     h = args.htoJ * J  # strength of the transverse field
     n_iter_opt = args.n_iter_opt  # number of iterations for optimizing RBM
@@ -118,7 +122,7 @@ if __name__ == "__main__":
     logfile = open(args.log_filename, "a") \
         if args.log_filename != "" else None  # log file handler
 
-    str_params = '_'.join(['N={}'.format(L),
+    str_params = '_'.join(['N={}x{}'.format(L1, L2),
                            'J={:.1f}'.format(J),
                            'h={:.1f}'.format(h),
                            'a={}'.format(alpha_sym),
@@ -127,22 +131,28 @@ if __name__ == "__main__":
     output("-----------------------------------------\n"
            "New execution. Local time: {0}.\n"
            ">>>> Params:\n"
-           "     L={1}\n"
-           "     J={2:.1f}\n"
-           "     h={3:.1f}\n"
-           "     n_iter_opt={4}\n"
-           "     n_iter_eval={5}\n"
-           "     alpha_sym={6:.1f}\n"
-           "     sgd_lr={7:.4f}\n".format(
+           "     N={1}x{2}\n"
+           "     J={3:.1f}\n"
+           "     h={4:.1f}\n"
+           "     n_iter_opt={5}\n"
+           "     n_iter_eval={6}\n"
+           "     alpha_sym={7:.1f}\n"
+           "     sgd_lr={8:.4f}\n".format(
                time.asctime(time.localtime(time.time())),
-               L, J, h, n_iter_opt, n_iter_eval, alpha_sym, sgd_lr),
+               L1, L2, J, h, n_iter_opt, n_iter_eval, alpha_sym, sgd_lr),
            logfile)
+
+    def get_site(x, y):
+        return x + y * L1
+
+    def get_idx(x, y, i):
+        return 3 * (x + y * L1) + i
 
     ###################################
     # Define Hilbert space, Hamiltonian
     ###################################
 
-    g = nk.graph.Hypercube(length=L, n_dim=1, pbc=True)  # 1D chain with pdc
+    g = nk.graph.Grid(length=[L1, L2], pbc=True)  # 2D lattice with pdc
     hi = nk.hilbert.Spin(s=0.5, graph=g)  # Hilbert space
     ha = nk.operator.Ising(hilbert=hi, J=J, h=h)  # Hamiltonian
 
@@ -172,14 +182,6 @@ if __name__ == "__main__":
         optimizer=opt,
         n_samples=1000,
         sr=sr)
-
-    # debug
-    # print("ma.n_par = ", ma.n_par)
-    # print("ma.input_size = ", ma.input_size)
-    # print("ma._as.shape = ", ma._as.shape)
-    # print("ma._bs.shape = ", ma._bs.shape)
-    # print("ma._ws.shape = ", ma._ws.shape)
-    # print("ma._autom.shape[0] = ", ma._autom.shape[0])
 
     ################################################
     # Optimize RBM parameters to obtain ground state
@@ -233,13 +235,18 @@ if __name__ == "__main__":
             hilbert=hi, operators=[pauli[i]], acting_on=[[0]])
         obs[str(o_idx)] = local_op
         o_idx += 1
-    # Add 2-local observables to the VMC object: sigma_i(0)*sigma_j(l)) (i,j=x,y,z, l=1,2,...,L/2)
-    for l, i, j in itertools.product(range(1, (L // 2) + 1), range(3), range(3)):
-        local_op = nk.operator.LocalOperator(hilbert=hi,
-                                             operators=[pauliKron[i][j]],
-                                             acting_on=[[0, l]])
-        obs[str(o_idx)] = local_op
-        o_idx += 1
+
+    # Add 2-local observables to the VMC object: sigma_i(0,0)*sigma_j(lx,ly)
+    # (i,j=x,y,z, lx=0,1,...,L1/2, ly=0,1,...,L2/2, but no lx=ly=0)
+    for lx, ly in itertools.product(range((L1 // 2) + 1), range((L2 // 2) + 1)):
+        if not (lx == 0 and ly == 0):
+            for i, j in [(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2)]:
+                local_op = nk.operator.LocalOperator(
+                    hilbert=hi,
+                    operators=[pauliKron[i][j]],
+                    acting_on=[[0, get_site(lx, ly)]])
+                obs[str(o_idx)] = local_op
+                o_idx += 1
 
     n_obser = o_idx
 
@@ -271,27 +278,44 @@ if __name__ == "__main__":
            logfile)
 
     obser_avr = np.mean(np.asarray(obser_eval, dtype=np.complex), axis=0)
-    # obser1_avr[i] = mean of sigma_i(0)
+    # obser1_avr[i] = mean of sigma_i(0,0)
     obser1_avr = obser_avr[0:3]
-    # obser1_dot_avr[i][j] = mean of sigma_i(0)*sigma_j(0)
+    # obser1_dot_avr[i][j] = mean of sigma_i(0,0)*sigma_j(0,0)
     obser1_dot_avr = np.asarray([[permu_sgn[i][j] * 1j * obser1_avr[permu_idx[i][j]]
                                   if i != j else 1 for j in range(3)] for i in range(3)])
-    # obser2_avr[l][i][j] = mean of sigma_i(0)*sigma_j(l+1)
-    obser2_avr = obser_avr[3:].reshape([L // 2, 3, 3])
+    # obser2_avr[lx][ly][i][j] = mean of sigma_i(0,0)*sigma_j(lx,ly)
+    # only valid for lx=0,1,...,L1/2, ly=0,1,...,L2/2, but no lx=ly=0
+    obser2_avr = np.zeros(
+        [(L1 // 2) + 1, (L2 // 2) + 1, 3, 3], dtype=np.complex)
 
-    # local1_avr[(l,i)] = mean of sigma_i(l)
-    local1_avr = np.tile(obser1_avr, L)
-    # local2_avr[(l,i),(k,j)] = mean of sigma_i(l)*sigma_j(k)
-    local2_avr = np.empty([3 * L, 3 * L], dtype=np.complex)
-    for l in range(L):
-        local2_avr[3 * l:3 * l + 3, 3 * l:3 * l + 3] = obser1_dot_avr
-        for dist in range(1, L // 2 + 1):
-            k = (l + dist) % L
-            local2_avr[3 * l:3 * l + 3, 3 * k:3 * k + 3] = obser2_avr[dist - 1]
-        for dist in range(1, (L - 1) // 2 + 1):
-            k = (l + L - dist) % L
-            local2_avr[3 * l:3 * l + 3, 3 * k:3 * k +
-                       3] = np.transpose(obser2_avr[dist - 1])
+    o_idx = 3
+    for lx, ly in itertools.product(range((L1 // 2) + 1), range((L2 // 2) + 1)):
+        if not (lx == 0 and ly == 0):
+            obser2_avr[lx][ly][[0, 0, 0, 1, 1, 2], [
+                0, 1, 2, 1, 2, 2]] = obser_avr[o_idx:o_idx + 6]
+            obser2_avr[lx][ly][1][0] = obser2_avr[lx][ly][0][1]
+            obser2_avr[lx][ly][2][0] = obser2_avr[lx][ly][0][2]
+            obser2_avr[lx][ly][2][1] = obser2_avr[lx][ly][1][2]
+            o_idx += 6
+    assert o_idx == n_obser
+
+    # local1_avr[(lx,ly,i)] = mean of sigma_i(lx,ly)
+    local1_avr = np.tile(obser1_avr, L1 * L2)
+    # local2_avr[(lx,ly,i),(kx,ky,j)] = mean of sigma_i(lx,ly)*sigma_j(kx,ky)
+    local2_avr = np.empty([3 * L1 * L2, 3 * L1 * L2], dtype=np.complex)
+    for lx, ly, kx, ky in itertools.product(range(L1), range(L2), range(L1), range(L2)):
+        l_idx = get_site(lx, ly)  # lattice index, i.e., 0,...,L1*L2-1
+        k_idx = get_site(kx, ky)
+        if l_idx == k_idx:
+            local2_avr[3 * l_idx: 3 * l_idx + 3,
+                       3 * k_idx: 3 * k_idx + 3] = obser1_dot_avr
+        else:
+            dx = min(max(lx, kx) - min(lx, kx),
+                     L1 + min(lx, kx) - max(lx, kx))
+            dy = min(max(ly, ky) - min(ly, ky),
+                     L2 + min(ly, ky) - max(ly, ky))
+            local2_avr[3 * l_idx: 3 * l_idx + 3,
+                       3 * k_idx: 3 * k_idx + 3] = obser2_avr[dx][dy]
 
     VCM = local2_avr - np.outer(local1_avr, local1_avr)
     emax = max(np.real(eig(VCM)[0]))  # TODO: Use more efficient algo
@@ -305,28 +329,31 @@ if __name__ == "__main__":
 
     if args.exact_diag:
 
-        local1_ed = np.empty([3 * L], dtype=np.complex)
-        for l, i in itertools.product(range(L), range(3)):
+        local1_ed = np.empty([3 * N], dtype=np.complex)
+        for lx, ly, i in itertools.product(range(L1), range(L2), range(3)):
+            l_idx = get_site(lx, ly)
+            idx = get_idx(lx, ly, i)
             local_op = nk.operator.LocalOperator(
                 hilbert=hi,
                 operators=[pauli[i]],
-                acting_on=[[l]])
-            local1_ed[get_idx(l, i)] = get_mean(
+                acting_on=[[l_idx]])
+            local1_ed[idx] = get_mean(
                 gs_psi_ed, local_op.to_sparse())
 
-        local2_ed = np.empty([3 * L, 3 * L], dtype=np.complex)
-        for l, k, i, j in itertools.product(
-                range(L), range(L), range(3), range(3)):
-            if not (l == k):
+        local2_ed = np.empty([3 * N, 3 * N], dtype=np.complex)
+        for lx, ly, kx, ky, i, j in itertools.product(
+                range(L1), range(L2), range(L1), range(L2), range(3), range(3)):
+            if not (lx == kx and ly == ky):
                 local_op = nk.operator.LocalOperator(
                     hilbert=hi,
                     operators=[pauliKron[i][j]],
-                    acting_on=[[l, k]])
-                local2_ed[get_idx(l, i), get_idx(
-                    k, j)] = get_mean(gs_psi_ed, local_op.to_sparse())
+                    acting_on=[[get_site(lx, ly), get_site(kx, ky)]])
+                local2_ed[get_idx(lx, ly, i), get_idx(kx, ky, j)] = get_mean(
+                    gs_psi_ed, local_op.to_sparse())
             else:
-                local2_ed[get_idx(l, i), get_idx(l, j)] = permu_sgn[i][j] * 1j * \
-                    local1_ed[get_idx(l, permu_idx[i][j])] \
+                local2_ed[get_idx(lx, ly, i), get_idx(lx, ly, j)] = \
+                    permu_sgn[i][j] * 1j * \
+                    local1_ed[get_idx(lx, ly, permu_idx[i][j])] \
                     if i != j else 1
 
         VCM_ed = local2_ed - np.outer(local1_ed, local1_ed)
