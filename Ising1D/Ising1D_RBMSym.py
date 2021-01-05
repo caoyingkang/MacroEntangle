@@ -159,10 +159,11 @@ if __name__ == "__main__":
     # Initialize RBM with lattice symmetry
     ######################################
 
-    alpha = alpha_sym * len(g.automorphisms()) // N
-    ma = nk.machine.RbmSpinSymm(hilbert=hi, alpha=alpha)  # Machine
+    n_autom = len(g.automorphisms())
+    ma = nk.machine.RbmSpinSymm(
+        hilbert=hi, alpha=alpha_sym * n_autom // N)  # Machine
     ma.init_random_parameters(seed=1234, sigma=0.01)
-    assert(ma._bs.shape[0] == alpha_sym)
+    assert(ma._ws.shape == (N, alpha_sym))
     opt = nk.optimizer.Sgd(ma, learning_rate=sgd_lr)  # Optimizer
     sa = nk.sampler.MetropolisLocal(machine=ma)  # Metropolis Local Sampling
     sr = nk.optimizer.SR(ma, diag_shift=0.1)  # Stochastic Reconfiguration
@@ -225,23 +226,20 @@ if __name__ == "__main__":
     ##########################################
 
     obs = {}
-    o_idx = 0
 
     # Add 1-local observables to the VMC object: sigma_i(0) (i=x,y,z)
     for i in range(3):
-        local_op = nk.operator.LocalOperator(
-            hilbert=hi, operators=[pauli[i]], acting_on=[[0]])
-        obs[str(o_idx)] = local_op
-        o_idx += 1
-    # Add 2-local observables to the VMC object: sigma_i(0)*sigma_j(l)) (i,j=x,y,z, l=1,2,...,L/2)
-    for l, i, j in itertools.product(range(1, (L // 2) + 1), range(3), range(3)):
-        local_op = nk.operator.LocalOperator(hilbert=hi,
-                                             operators=[pauliKron[i][j]],
-                                             acting_on=[[0, l]])
-        obs[str(o_idx)] = local_op
-        o_idx += 1
+        obs[i] = nk.operator.LocalOperator(hilbert=hi,
+                                           operators=pauli[i],
+                                           acting_on=[0])
 
-    n_obser = o_idx
+    # Add 2-local observables to the VMC object: sigma_i(0)*sigma_j(l)) (i,j=x,y,z, l=1,2,...,L/2)
+    n_obser = 3
+    for l, i, j in itertools.product(range(1, (L // 2) + 1), range(3), range(3)):
+        obs[n_obser] = nk.operator.LocalOperator(hilbert=hi,
+                                                 operators=pauliKron[i][j],
+                                                 acting_on=[0, l])
+        n_obser += 1
 
     output(">>>> Observable evaluation\n", logfile)
 
@@ -271,11 +269,13 @@ if __name__ == "__main__":
            logfile)
 
     obser_avr = np.mean(np.asarray(obser_eval, dtype=np.complex), axis=0)
+
     # obser1_avr[i] = mean of sigma_i(0)
     obser1_avr = obser_avr[0:3]
     # obser1_dot_avr[i][j] = mean of sigma_i(0)*sigma_j(0)
     obser1_dot_avr = np.asarray([[permu_sgn[i][j] * 1j * obser1_avr[permu_idx[i][j]]
-                                  if i != j else 1 for j in range(3)] for i in range(3)])
+                                  if i != j else 1 for j in range(3)] for i in range(3)],
+                                dtype=np.complex)
     # obser2_avr[l][i][j] = mean of sigma_i(0)*sigma_j(l+1)
     obser2_avr = obser_avr[3:].reshape([L // 2, 3, 3])
 
@@ -307,27 +307,25 @@ if __name__ == "__main__":
 
         local1_ed = np.empty([3 * L], dtype=np.complex)
         for l, i in itertools.product(range(L), range(3)):
-            local_op = nk.operator.LocalOperator(
-                hilbert=hi,
-                operators=[pauli[i]],
-                acting_on=[[l]])
-            local1_ed[get_idx(l, i)] = get_mean(
-                gs_psi_ed, local_op.to_sparse())
+            idx = get_idx(l, i)
+            local_op = nk.operator.LocalOperator(hilbert=hi,
+                                                 operators=pauli[i],
+                                                 acting_on=[l])
+            local1_ed[idx] = get_mean(gs_psi_ed, local_op.to_sparse())
 
         local2_ed = np.empty([3 * L, 3 * L], dtype=np.complex)
-        for l, k, i, j in itertools.product(
-                range(L), range(L), range(3), range(3)):
+        for l, k, i, j in itertools.product(range(L), range(L), range(3), range(3)):
+            lidx, kidx = get_idx(l, i), get_idx(k, j)
             if not (l == k):
-                local_op = nk.operator.LocalOperator(
-                    hilbert=hi,
-                    operators=[pauliKron[i][j]],
-                    acting_on=[[l, k]])
-                local2_ed[get_idx(l, i), get_idx(
-                    k, j)] = get_mean(gs_psi_ed, local_op.to_sparse())
+                local_op = nk.operator.LocalOperator(hilbert=hi,
+                                                     operators=pauliKron[i][j],
+                                                     acting_on=[l, k])
             else:
-                local2_ed[get_idx(l, i), get_idx(l, j)] = permu_sgn[i][j] * 1j * \
-                    local1_ed[get_idx(l, permu_idx[i][j])] \
-                    if i != j else 1
+                local_op = nk.operator.LocalOperator(hilbert=hi,
+                                                     operators=(
+                                                         pauli[i] @ pauli[j]),
+                                                     acting_on=[l])
+            local2_ed[lidx, kidx] = get_mean(gs_psi_ed, local_op.to_sparse())
 
         VCM_ed = local2_ed - np.outer(local1_ed, local1_ed)
         emax_ed = max(np.real(eig(VCM_ed)[0]))  # TODO: Use more efficient algo
@@ -335,7 +333,7 @@ if __name__ == "__main__":
         output(">>>> Compare with ED results:\n", logfile)
         output("     exact ground-state energy E0 = {0:.5f}\n".format(
             gs_energy_ed), logfile)
-        output("     emax(VCM_ed) = {0:.5f}\n".format(emax_ed))
+        output("     emax(VCM_ed) = {0:.5f}\n".format(emax_ed), logfile)
 
     if logfile is not None:
         logfile.close()

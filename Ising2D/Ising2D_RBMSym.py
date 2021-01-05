@@ -153,6 +153,7 @@ if __name__ == "__main__":
     ###################################
 
     g = nk.graph.Grid(length=[L1, L2], pbc=True)  # 2D lattice with pdc
+    # note that for 0<=x<L1, 0<=y<L2, the site (x,y) is numbered x+y*L1
     hi = nk.hilbert.Spin(s=0.5, graph=g)  # Hilbert space
     ha = nk.operator.Ising(hilbert=hi, J=J, h=h)  # Hamiltonian
 
@@ -169,10 +170,11 @@ if __name__ == "__main__":
     # Initialize RBM with lattice symmetry
     ######################################
 
-    alpha = alpha_sym * len(g.automorphisms()) // N
-    ma = nk.machine.RbmSpinSymm(hilbert=hi, alpha=alpha)  # Machine
+    n_autom = len(g.automorphisms())
+    ma = nk.machine.RbmSpinSymm(
+        hilbert=hi, alpha=alpha_sym * n_autom // N)  # Machine
     ma.init_random_parameters(seed=1234, sigma=0.01)
-    assert(ma._bs.shape[0] == alpha_sym)
+    assert(ma._ws.shape == (N, alpha_sym))
     opt = nk.optimizer.Sgd(ma, learning_rate=sgd_lr)  # Optimizer
     sa = nk.sampler.MetropolisLocal(machine=ma)  # Metropolis Local Sampling
     sr = nk.optimizer.SR(ma, diag_shift=0.1)  # Stochastic Reconfiguration
@@ -227,28 +229,24 @@ if __name__ == "__main__":
     ##########################################
 
     obs = {}
-    o_idx = 0
 
     # Add 1-local observables to the VMC object: sigma_i(0) (i=x,y,z)
     for i in range(3):
-        local_op = nk.operator.LocalOperator(
-            hilbert=hi, operators=[pauli[i]], acting_on=[[0]])
-        obs[str(o_idx)] = local_op
-        o_idx += 1
+        obs[i] = nk.operator.LocalOperator(hilbert=hi,
+                                           operators=pauli[i],
+                                           acting_on=[0])
 
     # Add 2-local observables to the VMC object: sigma_i(0,0)*sigma_j(lx,ly)
     # (i,j=x,y,z, lx=0,1,...,L1/2, ly=0,1,...,L2/2, but no lx=ly=0)
+    n_obser = 3
     for lx, ly in itertools.product(range((L1 // 2) + 1), range((L2 // 2) + 1)):
         if not (lx == 0 and ly == 0):
+            ls = get_site(lx, ly)
             for i, j in [(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2)]:
-                local_op = nk.operator.LocalOperator(
-                    hilbert=hi,
-                    operators=[pauliKron[i][j]],
-                    acting_on=[[0, get_site(lx, ly)]])
-                obs[str(o_idx)] = local_op
-                o_idx += 1
-
-    n_obser = o_idx
+                obs[n_obser] = nk.operator.LocalOperator(hilbert=hi,
+                                                         operators=pauliKron[i][j],
+                                                         acting_on=[0, ls])
+                n_obser += 1
 
     output(">>>> Observable evaluation\n", logfile)
 
@@ -278,16 +276,17 @@ if __name__ == "__main__":
            logfile)
 
     obser_avr = np.mean(np.asarray(obser_eval, dtype=np.complex), axis=0)
+
     # obser1_avr[i] = mean of sigma_i(0,0)
     obser1_avr = obser_avr[0:3]
     # obser1_dot_avr[i][j] = mean of sigma_i(0,0)*sigma_j(0,0)
     obser1_dot_avr = np.asarray([[permu_sgn[i][j] * 1j * obser1_avr[permu_idx[i][j]]
-                                  if i != j else 1 for j in range(3)] for i in range(3)])
+                                  if i != j else 1 for j in range(3)] for i in range(3)],
+                                dtype=np.complex)
     # obser2_avr[lx][ly][i][j] = mean of sigma_i(0,0)*sigma_j(lx,ly)
     # only valid for lx=0,1,...,L1/2, ly=0,1,...,L2/2, but no lx=ly=0
     obser2_avr = np.zeros(
         [(L1 // 2) + 1, (L2 // 2) + 1, 3, 3], dtype=np.complex)
-
     o_idx = 3
     for lx, ly in itertools.product(range((L1 // 2) + 1), range((L2 // 2) + 1)):
         if not (lx == 0 and ly == 0):
@@ -300,22 +299,22 @@ if __name__ == "__main__":
     assert o_idx == n_obser
 
     # local1_avr[(lx,ly,i)] = mean of sigma_i(lx,ly)
-    local1_avr = np.tile(obser1_avr, L1 * L2)
+    local1_avr = np.tile(obser1_avr, N)
     # local2_avr[(lx,ly,i),(kx,ky,j)] = mean of sigma_i(lx,ly)*sigma_j(kx,ky)
-    local2_avr = np.empty([3 * L1 * L2, 3 * L1 * L2], dtype=np.complex)
+    local2_avr = np.empty([3 * N, 3 * N], dtype=np.complex)
     for lx, ly, kx, ky in itertools.product(range(L1), range(L2), range(L1), range(L2)):
-        l_idx = get_site(lx, ly)  # lattice index, i.e., 0,...,L1*L2-1
-        k_idx = get_site(kx, ky)
-        if l_idx == k_idx:
-            local2_avr[3 * l_idx: 3 * l_idx + 3,
-                       3 * k_idx: 3 * k_idx + 3] = obser1_dot_avr
+        ls = get_site(lx, ly)  # lattice site, i.e., 0,...,N-1
+        ks = get_site(kx, ky)
+        if ls == ks:
+            local2_avr[3 * ls: 3 * ls + 3,
+                       3 * ks: 3 * ks + 3] = obser1_dot_avr
         else:
             dx = min(max(lx, kx) - min(lx, kx),
                      L1 + min(lx, kx) - max(lx, kx))
             dy = min(max(ly, ky) - min(ly, ky),
                      L2 + min(ly, ky) - max(ly, ky))
-            local2_avr[3 * l_idx: 3 * l_idx + 3,
-                       3 * k_idx: 3 * k_idx + 3] = obser2_avr[dx][dy]
+            local2_avr[3 * ls: 3 * ls + 3,
+                       3 * ks: 3 * ks + 3] = obser2_avr[dx][dy]
 
     VCM = local2_avr - np.outer(local1_avr, local1_avr)
     emax = max(np.real(eig(VCM)[0]))  # TODO: Use more efficient algo
@@ -331,30 +330,28 @@ if __name__ == "__main__":
 
         local1_ed = np.empty([3 * N], dtype=np.complex)
         for lx, ly, i in itertools.product(range(L1), range(L2), range(3)):
-            l_idx = get_site(lx, ly)
+            ls = get_site(lx, ly)
             idx = get_idx(lx, ly, i)
-            local_op = nk.operator.LocalOperator(
-                hilbert=hi,
-                operators=[pauli[i]],
-                acting_on=[[l_idx]])
-            local1_ed[idx] = get_mean(
-                gs_psi_ed, local_op.to_sparse())
+            local_op = nk.operator.LocalOperator(hilbert=hi,
+                                                 operators=pauli[i],
+                                                 acting_on=[ls])
+            local1_ed[idx] = get_mean(gs_psi_ed, local_op.to_sparse())
 
         local2_ed = np.empty([3 * N, 3 * N], dtype=np.complex)
         for lx, ly, kx, ky, i, j in itertools.product(
                 range(L1), range(L2), range(L1), range(L2), range(3), range(3)):
-            if not (lx == kx and ly == ky):
-                local_op = nk.operator.LocalOperator(
-                    hilbert=hi,
-                    operators=[pauliKron[i][j]],
-                    acting_on=[[get_site(lx, ly), get_site(kx, ky)]])
-                local2_ed[get_idx(lx, ly, i), get_idx(kx, ky, j)] = get_mean(
-                    gs_psi_ed, local_op.to_sparse())
+            ls, lidx = get_site(lx, ly), get_idx(lx, ly, i)
+            ks, kidx = get_site(kx, ky), get_idx(kx, ky, j)
+            if not ls == ks:
+                local_op = nk.operator.LocalOperator(hilbert=hi,
+                                                     operators=pauliKron[i][j],
+                                                     acting_on=[ls, ks])
             else:
-                local2_ed[get_idx(lx, ly, i), get_idx(lx, ly, j)] = \
-                    permu_sgn[i][j] * 1j * \
-                    local1_ed[get_idx(lx, ly, permu_idx[i][j])] \
-                    if i != j else 1
+                local_op = nk.operator.LocalOperator(hilbert=hi,
+                                                     operators=(
+                                                         pauli[i] @ pauli[j]),
+                                                     acting_on=[ls])
+            local2_ed[lidx, kidx] = get_mean(gs_psi_ed, local_op.to_sparse())
 
         VCM_ed = local2_ed - np.outer(local1_ed, local1_ed)
         emax_ed = max(np.real(eig(VCM_ed)[0]))  # TODO: Use more efficient algo
