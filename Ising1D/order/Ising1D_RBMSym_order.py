@@ -14,6 +14,7 @@ pauli = [np.asarray([[0, 1], [1, 0]]),
 pauliKron = [[np.kron(pauli[i], pauli[j])
               for j in range(3)] for i in range(3)]
 
+
 # For i!=j, pauli[i]*pauli[j] = permu_sgn[i][j] * 1j * pauli[permu_idx[i][j]]
 permu_idx = [[0, 2, 1],
              [2, 1, 0],
@@ -31,35 +32,6 @@ def get_idx(l, i):
 
 def get_mean(psi, sp_op):
     return np.conj(psi) @ sp_op @ psi
-
-
-def get_VCM(obser, L):
-    obser = np.asarray(obser, dtype=np.complex)
-    # obser1[i] = mean of sigma_i(0)
-    obser1 = obser[0:3]
-    # obser1_dot[i][j] = mean of sigma_i(0)*sigma_j(0)
-    obser1_dot = np.asarray([[permu_sgn[i][j] * 1j * obser1[permu_idx[i][j]]
-                              if i != j else 1
-                              for j in range(3)] for i in range(3)],
-                            dtype=np.complex)
-    # obser2[l][i][j] = mean of sigma_i(0)*sigma_j(l+1)
-    obser2 = obser[3:].reshape([L // 2, 3, 3])
-    # local1[(l,i)] = mean of sigma_i(l)
-    local1 = np.tile(obser1, L)
-    # local2[(l,i),(k,j)] = mean of sigma_i(l)*sigma_j(k)
-    local2 = np.empty([3 * L, 3 * L], dtype=np.complex)
-    for l in range(L):
-        local2[3 * l:3 * l + 3, 3 * l:3 * l + 3] = obser1_dot
-        for dist in range(1, L // 2 + 1):
-            k = (l + dist) % L
-            local2[3 * l:3 * l + 3,
-                   3 * k:3 * k + 3] = obser2[dist - 1]
-        for dist in range(1, (L - 1) // 2 + 1):
-            k = (l + L - dist) % L
-            local2[3 * l:3 * l + 3,
-                   3 * k:3 * k + 3] = np.transpose(obser2[dist - 1])
-    VCM = local2 - np.outer(local1, local1)
-    return np.copy(VCM)
 
 
 def output(s, f=None):
@@ -119,16 +91,16 @@ if __name__ == "__main__":
         help="hidden unit density for symmetrized RBM (default=1)"
     )
     parser.add_argument(
+        "-dc",
+        "--direct_calc",
+        action="store_true",
+        help="Skip the training of RBM, and directly calculate the desired value"
+    )
+    parser.add_argument(
         "-ed",
         "--exact_diag",
         action="store_true",
         help="Compare results with exact diagonalization"
-    )
-    parser.add_argument(
-        "-sigma",
-        "--sigma",
-        action="store_true",
-        help="Report the average of sigmaX_0 and sigmaZ_0"
     )
     parser.add_argument(
         "-log",
@@ -178,18 +150,68 @@ if __name__ == "__main__":
     # Define Hilbert space, Hamiltonian
     ###################################
 
-    g = nk.graph.Hypercube(length=L, n_dim=1, pbc=True)  # 1D chain with pdc
-    hi = nk.hilbert.Spin(s=0.5, graph=g)  # Hilbert space
-    ha = nk.operator.Ising(hilbert=hi, J=J, h=h)  # Hamiltonian
+    symbrk_scale = 0.02
+
+    if J < 0:  # ferromagnetic
+
+        g = nk.graph.Hypercube(
+            length=L, n_dim=1, pbc=True)  # 1D chain with pdc
+        hi = nk.hilbert.Spin(s=0.5, graph=g)  # Hilbert space
+        ha = nk.operator.LocalOperator(hi)  # Hamiltonian
+        for l in range(L):
+            ha += nk.operator.LocalOperator(hilbert=hi,
+                                            operators=J * pauliKron[2][2],
+                                            acting_on=[l, (l + 1) % L])
+            ha += nk.operator.LocalOperator(hilbert=hi,
+                                            operators=-h * pauli[0],
+                                            acting_on=[l])
+        # add a small perturbation in order for spontaneous symmetry breaking
+        pert_op = symbrk_scale * J * pauli[2]
+        for l in range(L):
+            ha += nk.operator.LocalOperator(hilbert=hi,
+                                            operators=pert_op,
+                                            acting_on=[l])
+
+    else:  # anti-ferromagnetic, add stagger perturbation
+
+        assert L % 2 == 0
+        g = nk.graph.Hypercube(
+            length=L, n_dim=1, pbc=True)  # 1D chain with pdc
+        g._automorphisms = \
+            [[(i+d) % L for i in range(L)]for d in range(0, L, 2)] + \
+            [[(L-i+d) % L for i in range(L)]for d in range(0, L, 2)]
+        hi = nk.hilbert.Spin(s=0.5, graph=g)  # Hilbert space
+        ha = nk.operator.LocalOperator(hi)  # Hamiltonian
+        for l in range(L):
+            ha += nk.operator.LocalOperator(hilbert=hi,
+                                            operators=J * pauliKron[2][2],
+                                            acting_on=[l, (l + 1) % L])
+            ha += nk.operator.LocalOperator(hilbert=hi,
+                                            operators=-h * pauli[0],
+                                            acting_on=[l])
+        # add a small perturbation in order for spontaneous symmetry breaking
+        pert_op = -symbrk_scale * J * pauli[2]
+        for l in range(L):
+            ha += nk.operator.LocalOperator(hilbert=hi,
+                                            operators=pert_op,
+                                            acting_on=[l])
+            pert_op = -pert_op
 
     ################################
     # Exact Diagonalization: testbed
     ################################
 
     if args.exact_diag:
-        res_ed = nk.exact.lanczos_ed(ha, k=1, compute_eigenvectors=True)
-        gs_energy_ed = res_ed[0][0]
-        gs_psi_ed = res_ed[1][:, 0]
+        if os.path.isfile("data/save_{}_{}.npz".format(pyfile, str_params)):
+            output(">>>> ED: Load npz file\n", logfile)
+            data_ed = np.load("data/save_{}_{}.npz".format(pyfile, str_params))
+            gs_energy_ed = data_ed["gs_energy_ed"]
+            gs_psi_ed = data_ed["gs_psi_ed"]
+        else:
+            output(">>>> ED: Lanczos algorithm\n", logfile)
+            res_ed = nk.exact.lanczos_ed(ha, k=1, compute_eigenvectors=True)
+            gs_energy_ed = res_ed[0][0]
+            gs_psi_ed = res_ed[1][:, 0]
 
     ######################################
     # Initialize RBM with lattice symmetry
@@ -200,6 +222,7 @@ if __name__ == "__main__":
         hilbert=hi, alpha=alpha_sym * n_autom // N)  # Machine
     ma.init_random_parameters(seed=1234, sigma=0.01)
     assert(ma._ws.shape == (N, alpha_sym))
+
     opt = nk.optimizer.Sgd(ma, learning_rate=sgd_lr)  # Optimizer
     sa = nk.sampler.MetropolisLocal(machine=ma)  # Metropolis Local Sampling
     sr = nk.optimizer.SR(ma, diag_shift=0.1)  # Stochastic Reconfiguration
@@ -214,14 +237,14 @@ if __name__ == "__main__":
     # Optimize RBM parameters to obtain ground state
     ################################################
 
-    if n_iter_opt == 0:
-        assert os.path.isfile("{}_opt_{}.log".format(pyfile, str_params))
+    if args.direct_calc:
+        assert os.path.isfile("data/{}_opt_{}.log".format(pyfile, str_params))
         output(">>>> RBMSym optimization skipped\n", logfile)
     else:
         output(">>>> RBMSym optimization\n", logfile)
 
         start = time.time()
-        gs.run(out="{}_opt_{}".format(pyfile, str_params),
+        gs.run(out="data/{}_opt_{}".format(pyfile, str_params),
                n_iter=n_iter_opt)
         end = time.time()
 
@@ -235,7 +258,7 @@ if __name__ == "__main__":
 
             # Import the data from log file
             data_opt = json.load(
-                open("{}_opt_{}.log".format(pyfile, str_params)))
+                open("data/{}_opt_{}.log".format(pyfile, str_params)))
             # Extract the relevant information
             iters_opt = [it["Iteration"] for it in data_opt["Output"]]
             energy_opt = [it["Energy"]["Mean"] for it in data_opt["Output"]]
@@ -252,77 +275,49 @@ if __name__ == "__main__":
                         linewidth=2, color='k', label='Energy (Exact)')
             ax.legend()
             plt.title('Symmetric RBM optimization')
-            plt.savefig('{}_opt_{}.png'.format(pyfile, str_params))
+            plt.savefig('data/{}_opt_{}.png'.format(pyfile, str_params))
 
     ##########################################
     # Evaluate observables using converged RBM
     ##########################################
 
-    obs = {}
+    op_sz = nk.operator.LocalOperator(hilbert=hi,
+                                      operators=pauli[2],
+                                      acting_on=[0])
+    obs = {"Localsz": op_sz}
 
-    # Add 1-local observables to the VMC object: sigma_i(0) (i=x,y,z)
-    for i in range(3):
-        obs[i] = nk.operator.LocalOperator(hilbert=hi,
-                                           operators=pauli[i],
-                                           acting_on=[0])
-
-    # Add 2-local observables to the VMC object: sigma_i(0)*sigma_j(l)) (i,j=x,y,z, l=1,2,...,L/2)
-    n_obser = 3
-    for l, i, j in itertools.product(range(1, (L // 2) + 1), range(3), range(3)):
-        obs[n_obser] = nk.operator.LocalOperator(hilbert=hi,
-                                                 operators=pauliKron[i][j],
-                                                 acting_on=[0, l])
-        n_obser += 1
-
-    if n_iter_eval == 0:
-        assert os.path.isfile("{}_eval_{}.log".format(pyfile, str_params))
+    if args.direct_calc:
+        assert os.path.isfile("data/{}_eval_{}.log".format(pyfile, str_params))
         output(">>>> Observable evaluation skipped\n", logfile)
     else:
         output(">>>> Observable evaluation\n", logfile)
 
         start = time.time()
-        gs.run(out="{}_eval_{}".format(pyfile, str_params),
+        gs.run(out="data/{}_eval_{}".format(pyfile, str_params),
                n_iter=n_iter_eval, obs=obs)
         end = time.time()
 
         output("     number of observables = {}\n"
                "     number of iterations = {}\n"
                "     time consumption: {} seconds\n".format(
-                   n_obser, n_iter_eval, end - start),
+                   len(obs), n_iter_eval, end - start),
                logfile)
 
     # raw data collected, now extract the relevant information
     data_eval = json.load(
-        open("{}_eval_{}.log".format(pyfile, str_params)))
+        open("data/{}_eval_{}.log".format(pyfile, str_params)))
+    assert n_iter_eval == len(data_eval["Output"])
 
     iters_eval = [it["Iteration"] for it in data_eval["Output"]]
     energy_eval = [it["Energy"]["Mean"] for it in data_eval["Output"]]
-    obser_eval = [[it[str(o_idx)]["Mean"] for o_idx in range(n_obser)]
-                  for it in data_eval["Output"]]
-
-    if n_iter_eval == 0:
-        n_iter_eval = len(data_eval["Output"])
+    sz_eval = [it["Localsz"]["Mean"] for it in data_eval["Output"]]
 
     output("     energy = {0:.5f}({1:.5f})\n".format(np.mean(energy_eval),
                                                      np.std(energy_eval) / np.sqrt(n_iter_eval)),
            logfile)
-
-    VCM_eval = [get_VCM(obser, L) for obser in obser_eval]
-    emax_eval = [max(np.real(eig(vcm)[0])) for vcm in VCM_eval]
-
-    output("     emax(VCM) = {0:.5f}({1:.5f})\n".format(np.mean(emax_eval),
-                                                        np.std(emax_eval) / np.sqrt(n_iter_eval)),
+    output("     localsz = {0:.5f}({1:.5f})\n".format(np.mean(sz_eval),
+                                                      np.std(sz_eval) / np.sqrt(n_iter_eval)),
            logfile)
-
-    if args.sigma:
-        sx_eval = [it[str(0)]["Mean"] for it in data_eval["Output"]]
-        sz_eval = [it[str(2)]["Mean"] for it in data_eval["Output"]]
-        output("     sigmaX_0 = {0:.5f}({1:.5f})\n".format(np.mean(sx_eval),
-                                                           np.std(sx_eval) / np.sqrt(n_iter_eval)),
-               logfile)
-        output("     sigmaZ_0 = {0:.5f}({1:.5f})\n".format(np.mean(sz_eval),
-                                                           np.std(sz_eval) / np.sqrt(n_iter_eval)),
-               logfile)
 
     ##########################################
     # Compare with ed results.
@@ -331,47 +326,16 @@ if __name__ == "__main__":
 
     if args.exact_diag:
 
-        local1_ed = np.empty([3 * L], dtype=np.complex)
-        for l, i in itertools.product(range(L), range(3)):
-            idx = get_idx(l, i)
-            local_op = nk.operator.LocalOperator(hilbert=hi,
-                                                 operators=pauli[i],
-                                                 acting_on=[l])
-            local1_ed[idx] = get_mean(gs_psi_ed, local_op.to_sparse())
-
-        local2_ed = np.empty([3 * L, 3 * L], dtype=np.complex)
-        for l, k, i, j in itertools.product(range(L), range(L), range(3), range(3)):
-            lidx, kidx = get_idx(l, i), get_idx(k, j)
-            if not (l == k):
-                local_op = nk.operator.LocalOperator(hilbert=hi,
-                                                     operators=pauliKron[i][j],
-                                                     acting_on=[l, k])
-            else:
-                local_op = nk.operator.LocalOperator(hilbert=hi,
-                                                     operators=(
-                                                         pauli[i] @ pauli[j]),
-                                                     acting_on=[l])
-            local2_ed[lidx, kidx] = get_mean(gs_psi_ed, local_op.to_sparse())
-
-        VCM_ed = local2_ed - np.outer(local1_ed, local1_ed)
-        emax_ed = max(np.real(eig(VCM_ed)[0]))  # TODO: Use more efficient algo
+        sz_ed = get_mean(gs_psi_ed, op_sz.to_sparse())
 
         output(">>>> Compare with ED results:\n", logfile)
         output("     exact ground-state energy E0 = {0:.5f}\n".format(
             gs_energy_ed), logfile)
-        output("     emax(VCM_ed) = {0:.5f}\n".format(emax_ed), logfile)
+        output("     exact localsz = {0:.5f}\n".format(sz_ed), logfile)
 
-        if args.sigma:
-            output("     sigmaX_0 = {0:.5f}\n".format(
-                local1_ed[get_idx(0, 0)]), logfile)
-            output("     sigmaZ_0 = {0:.5f}\n".format(
-                local1_ed[get_idx(0, 2)]), logfile)
-
-        np.savez("save_{}_{}".format(pyfile, str_params),
-                 gs_energy_ed=gs_energy_ed,
-                 gs_psi_ed=gs_psi_ed,
-                 local1_ed=local1_ed,
-                 local2_ed=local2_ed)
+        # np.savez("data/save_{}_{}".format(pyfile, str_params),
+        #          gs_energy_ed=gs_energy_ed,
+        #          gs_psi_ed=gs_psi_ed)
 
     if logfile is not None:
         logfile.close()
