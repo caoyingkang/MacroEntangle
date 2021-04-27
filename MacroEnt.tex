@@ -1,0 +1,194 @@
+\documentclass[aps,prl,reprint,superscriptaddress]{revtex4-2}
+%\documentclass[aps,prl,reprint,groupedaddress]{revtex4-2}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{graphbox}
+
+
+
+\usepackage[unicode=true,
+ bookmarks=true,bookmarksnumbered=false,bookmarksopen=false,
+ breaklinks=false,pdfborder={0 0 1},backref=false,colorlinks=true]
+ {hyperref}
+\hypersetup{
+ linkcolor=magenta, urlcolor=blue, citecolor=blue, pdfstartview={FitH}, unicode=true}
+
+
+\usepackage{amsfonts}\usepackage{tabularx}\usepackage{dcolumn}\usepackage{bm}\usepackage{graphicx}\usepackage{epstopdf}\usepackage{xcolor}
+\setcounter{MaxMatrixCols}{10}
+\hypersetup{urlcolor=blue}
+\usepackage{times}
+
+
+
+
+
+
+
+\usepackage{float}
+\makeatletter
+\let\newfloat\newfloat@ltx
+\makeatother
+
+\usepackage{algorithm}
+\usepackage{algorithmic}
+
+\renewcommand{\algorithmicrequire}{\textbf{Input:}}
+\renewcommand{\algorithmicensure}{\textbf{Output:}}
+
+
+\begin{document}
+
+% Use the \preprint command to place your local institutional report
+% number in the upper righthand corner of the title page in preprint mode.
+% Multiple \preprint commands are allowed.
+% Use the 'preprintnumbers' class option to override journal defaults
+% to display numbers if necessary
+%\preprint{}
+
+%Title of paper
+\title{Title}
+
+% repeat the \author .. \affiliation  etc. as needed
+% \email, \thanks, \homepage, \altaffiliation all apply to the current
+% author. Explanatory text should go in the []'s, actual e-mail
+% address or url should go in the {}'s for \email and \homepage.
+% Please use the appropriate macro foreach each type of information
+
+% \affiliation command applies to all authors since the last
+% \affiliation command. The \affiliation command should follow the
+% other information
+% \affiliation can be followed by \email, \homepage, \thanks as well.
+\author{Author}
+%\homepage[]{Your web page}
+%\thanks{}
+%\altaffiliation{}
+\affiliation{Affiliation}
+
+\author{Author}
+\email{email}
+\affiliation{Affiliation}
+%Collaboration name if desired (requires use of superscriptaddress
+%option in \documentclass). \noaffiliation is required (may also be
+%used with the \author command).
+%\collaboration can be followed by \email, \homepage, \thanks as well.
+%\collaboration{}
+%\noaffiliation
+
+\date{\today}
+
+\begin{abstract}
+
+Abstract ...
+
+\end{abstract}
+
+% insert suggested keywords - APS authors don't need to do this
+%\keywords{}
+
+
+
+
+%\maketitle must follow title, authors, abstract, and keywords
+\maketitle
+
+% body of paper here - Use proper section commands
+% References should be done using the \cite, \ref, and \label commands
+
+% Put \label in argument of \section for cross-referencing
+%\section{\label{}}
+%\emph{Introduction.}\textemdash
+
+Quantum entanglement has been shown to be a ubiquitous phenomenon in foundamental studies of quantum physics and take indispensable roles in varied quantum applications ranging from ultraprecise sensing, provably secure communication and quantum computing. Despite such prevalence, experts have found it extremely nontrivial to find a universal yet computationally efficient entanglement measure, or a categorization for multipartite quantum correlations in general. In most cases, the computational burden grows exponentially with the number of particles $ N $. Such difficulty is highlighted in the field of condensed matter physics where $ N $ usually tends to be incredibly large. As a result, instead of making a full classification of all possible entanglement patterns, researchers focus on the asymptotic behavior of entanglement properties and switch between different measures when dealing with different problems. Under this line of thought, Morimae et al. \cite{Morimae2005Macroscopic} proposed a characterizing index, or index $ p $ following their notation, which was demonstrated to capture the existence of macroscopic entanglement---that is, intuitively, the superposition of macroscopically distinct states---and have a close relationship to the stability of quantum states against local measurements.
+
+As is pointed out in \cite{Morimae2005Macroscopic}, there is an efficient algorithm of computing the index $ p $ for pure states of quantum spins on a lattice, as long as one has obtained all the two-local covariance information of the state. However, this would not be helpful in identifying macroscopic entanglement unless combined with a method to efficiently estimate the correlations of local observables on up to two distant lattice sites. Although we may not expect tractability for general states due to the exponential dimension of the Hilbert space, machine learning provides a solution to this problem under the justified assumption that the physically interesting quantum states live in a much smaller subspace. Machine learning techniques, best known for real-world applications such as facial recognition and machine translation \cite{Lecun2015Deep}, have also been widely adopted in condensed matter physics with unprecedented success, mainly attributed to their ability of feature extraction and dimensionality reduction \cite{Carleo2017Solving,Carrasquilla2017ML-phase,Deng2017ML-topo,Deng2018ML-Bell,Dunjko2018ML-AI-quantum-review}. In this work, we adopt the restricted Boltzmann machine (RBM) based reinforcement learning to learn, as a concrete example, an approximate representation of the ground state of the transverse field Ising model (TFIM) on a hypercubic lattice up to three dimension. By making use of the advantage that local observables are readily estimated out of RBM representations, we showcase the capability of reinforcement learning in detecting macroscopic entanglement. Importantly, the approximation power of RBMs is confirmed by showing that the index $ p $ results are in perfect alignment with exact diagonalization (ED) method in small-sized low-dimensional cases and agree largely on quantum phase transition behaviors predicted by our numerical calculations based on order parameters.
+
+
+
+
+\emph{Discussion and conclusion}\textemdash Discussion and conclusion
+
+\emph{Acknowledgment}\textemdash Acknowledgment
+
+% If in two-column mode, this environment will change to single-column
+% format so that long equations can be displayed. Use
+% sparingly.
+%\begin{widetext}
+% put long equation here
+%\end{widetext}
+
+% figures should be put into the text as floats.
+% Use the graphics or graphicx packages (distributed with LaTeX2e)
+% and the \includegraphics macro defined in those packages.
+% See the LaTeX Graphics Companion by Michel Goosens, Sebastian Rahtz,
+% and Frank Mittelbach for instance.
+%
+% Here is an example of the general form of a figure:
+% Fill in the caption in the braces of the \caption{} command. Put the label
+% that you will use with \ref{} command in the braces of the \label{} command.
+% Use the figure* environment if the figure should span across the
+% entire page. There is no need to do explicit centering.
+
+% \begin{figure}
+% \includegraphics{}%
+% \caption{\label{}}
+% \end{figure}
+
+% Surround figure environment with turnpage environment for landscape
+% figure
+% \begin{turnpage}
+% \begin{figure}
+% \includegraphics{}%
+% \caption{\label{}}
+% \end{figure}
+% \end{turnpage}
+
+% tables should appear as floats within the text
+%
+% Here is an example of the general form of a table:
+% Fill in the caption in the braces of the \caption{} command. Put the label
+% that you will use with \ref{} command in the braces of the \label{} command.
+% Insert the column specifiers (l, r, c, d, etc.) in the empty braces of the
+% \begin{tabular}{} command.
+% The ruledtabular enviroment adds doubled rules to table and sets a
+% reasonable default table settings.
+% Use the table* environment to get a full-width table in two-column
+% Add \usepackage{longtable} and the longtable (or longtable*}
+% environment for nicely formatted long tables. Or use the the [H]
+% placement option to break a long table (with less control than 
+% in longtable).
+% \begin{table}%[H] add [H] placement to break table across pages
+% \caption{\label{}}
+% \begin{ruledtabular}
+% \begin{tabular}{}
+% Lines of table here ending with \\
+% \end{tabular}
+% \end{ruledtabular}
+% \end{table}
+
+% Surround table environment with turnpage environment for landscape
+% table
+% \begin{turnpage}
+% \begin{table}
+% \caption{\label{}}
+% \begin{ruledtabular}
+% \begin{tabular}{}
+% \end{tabular}
+% \end{ruledtabular}
+% \end{table}
+% \end{turnpage}
+
+% Specify following sections are appendices. Use \appendix* if there
+% only one appendix.
+
+
+% Create the reference section using BibTeX:
+\bibliographystyle{apsrev4-1-title}
+\bibliography{Caobib}
+
+\end{document}
+%
+% ****** End of file apstemplate.tex ******
+
