@@ -7,7 +7,6 @@
 \usepackage{graphbox}
 
 
-
 \usepackage[unicode=true,
  bookmarks=true,bookmarksnumbered=false,bookmarksopen=false,
  breaklinks=false,pdfborder={0 0 1},backref=false,colorlinks=true]
@@ -16,15 +15,16 @@
  linkcolor=magenta, urlcolor=blue, citecolor=blue, pdfstartview={FitH}, unicode=true}
 
 
-\usepackage{amsfonts}\usepackage{tabularx}\usepackage{dcolumn}\usepackage{bm}\usepackage{graphicx}\usepackage{epstopdf}\usepackage{xcolor}
+\usepackage{amsfonts}
+\usepackage{tabularx}
+\usepackage{dcolumn}
+\usepackage{bm}
+\usepackage{graphicx}
+\usepackage{epstopdf}
+\usepackage{xcolor}
 \setcounter{MaxMatrixCols}{10}
 \hypersetup{urlcolor=blue}
 \usepackage{times}
-
-
-
-
-
 
 
 \usepackage{float}
@@ -99,18 +99,34 @@ Abstract ...
 
 % Put \label in argument of \section for cross-referencing
 %\section{\label{}}
-%\emph{Introduction.}\textemdash
+%\emph{Introduction.}\textemdash 
 
 Quantum entanglement has been shown to be a ubiquitous phenomenon in foundamental studies of quantum physics and take indispensable roles in varied quantum applications ranging from ultraprecise sensing, provably secure communication and quantum computing. Despite such prevalence, experts have found it extremely nontrivial to find a universal yet computationally efficient entanglement measure, or a categorization for multipartite quantum correlations in general. In most cases, the computational burden grows exponentially with the number of particles $ N $. Such difficulty is highlighted in the field of condensed matter physics where $ N $ usually tends to be incredibly large. As a result, instead of making a full classification of all possible entanglement patterns, researchers focus on the asymptotic behavior of entanglement properties and switch between different measures when dealing with different problems. Under this line of thought, Morimae et al. \cite{Morimae2005Macroscopic} proposed a characterizing index, or index $ p $ following their notation, which was demonstrated to capture the existence of macroscopic entanglement---that is, intuitively, the superposition of macroscopically distinct states---and have a close relationship to the stability of quantum states against local measurements.
 
-As is pointed out in \cite{Morimae2005Macroscopic}, there is an efficient algorithm of computing the index $ p $ for pure states of quantum spins on a lattice, as long as one has obtained all the two-local covariance information of the state. However, this would not be helpful in identifying macroscopic entanglement unless combined with a method to efficiently estimate the correlations of local observables on up to two distant lattice sites. Although we may not expect tractability for general states due to the exponential dimension of the Hilbert space, machine learning provides a solution to this problem under the justified assumption that the physically interesting quantum states live in a much smaller subspace. Machine learning techniques, best known for real-world applications such as facial recognition and machine translation \cite{Lecun2015Deep}, have also been widely adopted in condensed matter physics with unprecedented success, mainly attributed to their ability of feature extraction and dimensionality reduction \cite{Carleo2017Solving,Carrasquilla2017ML-phase,Deng2017ML-topo,Deng2018ML-Bell,Dunjko2018ML-AI-quantum-review}. In this work, we adopt the restricted Boltzmann machine (RBM) based reinforcement learning to learn, as a concrete example, an approximate representation of the ground state of the transverse field Ising model (TFIM) on a hypercubic lattice up to three dimension. By making use of the advantage that local observables are readily estimated out of RBM representations, we showcase the capability of reinforcement learning in detecting macroscopic entanglement. Importantly, the approximation power of RBMs is confirmed by showing that the index $ p $ results are in perfect alignment with exact diagonalization (ED) method in small-sized low-dimensional cases and agree largely on quantum phase transition behaviors predicted by our numerical calculations based on order parameters.
+As is pointed out in \cite{Morimae2005Macroscopic}, there is an efficient algorithm of computing the index $ p $ for pure states of quantum spins on a lattice, as long as one has obtained all the two-local covariance information of the state. However, this would not be helpful in identifying macroscopic entanglement unless combined with a method to efficiently estimate the correlations of local observables on up to two distant lattice sites. Although we may not expect tractability for general states due to the exponential dimension of the Hilbert space, machine learning provides a solution to this problem under the justified assumption that the physically interesting quantum states live in a much smaller subspace. Machine learning techniques, best known for real-world applications such as facial recognition and machine translation \cite{Lecun2015Deep}, have also been widely adopted in quantum many-body physics with unprecedented success, mainly attributed to their ability of feature extraction and dimensionality reduction \cite{Carleo2017Solving,Carrasquilla2017ML-phase,Deng2017ML-topo,Deng2018ML-Bell,Dunjko2018ML-AI-quantum-review}. In this work, we adopt the restricted Boltzmann machine (RBM) based reinforcement learning to learn, as a concrete example, an approximate representation of the ground state of the transverse field Ising model (TFIM) on a hypercubic lattice up to three dimension. By making use of the advantage that local observables are readily estimated out of RBM representations, we showcase the capability of reinforcement learning in detecting macroscopic entanglement. Importantly, the approximation power of RBMs is confirmed by showing that the index $ p $ results are in perfect alignment with exact diagonalization (ED) method in small-sized low-dimensional cases and agree largely on quantum phase transition behaviors predicted by our numerical calculations based on order parameters.
 
+Let's consider a quantum system of $ N $ spin-$ \frac{1}{2} $ particles (or qubits). In the RBM architecture, the role of spin configurations $ \Xi = \left( \sigma_{1}^z, \sigma_{2}^z, \cdots, \sigma_{N}^z \right) $ is taken up by a visible layer of $ N $ binary units, which is connected to a layer of $ M $ hidden units whose values get eventually traced out. The tunable strength of the bilateral connections between visible and hidden units gives rise to a variational representation of the quantum state that is learnable \cite{Carleo2017Solving}:
+\begin{equation}
+	\Phi_{M}(\Xi; \Omega) = \sum_{\left\{ h_{k} \right\}} e^{\sum_{k} a_{k} \sigma_{k}^{z} + \sum_{k^{\prime}} b_{k^{\prime}} h_{k^{\prime}} + \sum_{k k^{\prime}} W_{k^{\prime} k} h_{k} \sigma_{k}^{z}} \label{eq:RBM}
+\end{equation}
+with $ \left\{ h_{k} \right\} = \left\{ -1, 1 \right\}^M $ being the possible values of hidden units, and $ \Omega \equiv (a, b, W) $ a set of complex parameters to be learned. The overall (unnormalized) quantum many-body state is understood as $ | \Phi(\Omega) \rangle = \sum_{\Xi} \Phi_{M}(\Xi; \Omega) | \Xi \rangle $. Existence of such an approximation to any quantum state to arbitrary precision is gauranteed by the representability theorems \cite{Kolmogorov1963Representation,Hornik1991Approximation,LeRoux2008Representational} if no limit on $ M $ is set. What's more suprising is that for the ground states of several interesting model Hamiltonians, this representation can be learned exceptionally well by reinforcement learning even if the hidden-unit density $ \alpha \equiv \frac{M}{N} $ is of a relatively low level. Indeed, one of our contributions is to confirm that the learning result obtained from energy-minimization (as opposed to variance-minimization \cite{Kent1999MC-energy-variance}) is sufficiently good for applications involving two-local correlations of spins.
 
+The index $ p $ serves as a defining character for macroscopic entanglement. More specifically, it is the scaling exponent of the maximum squared quantum fluctuations over the collection $ \mathcal{A} $ of all reasonable macroscopic observables:
+\begin{equation}
+	\sup_{\hat{A} \in \mathcal{A}} \left[ \left\langle \psi \left| \hat{A}^{2} \right| \psi \right\rangle - (\langle \psi | \hat{A} | \psi \rangle)^{2} \right] = \Theta \left( N^{p} \right)
+\end{equation}
+By a reasonable macroscopic observable, we mean an additive observable, i.e. a sum of local observables over a macroscopic region. We say that $ | \psi \rangle $ is macroscopically entangled if $ p = 2 $, whereas it may be entangled but not macroscopically if $ p < 2 $. In the context of quantum spin-$ \frac{1}{2} $ systems, Morimae et al. \cite{Morimae2005Macroscopic} derived that the maximum eigenvalue $ e_{\max} $ of the variance-covariance matrix (VCM) scales exactly as $ \Theta \left( N^{p-1} \right) $. Here, the VCM is the $ 3N \times 3N $ matrix defined by ($ \alpha,\beta = x,y,z $; $ l,l' = 1,\cdots,N $)
+\begin{equation}
+	V_{\alpha l, \beta l^{\prime}} \equiv \left\langle \psi \left| \sigma_{l}^{\alpha} \sigma_{l^{\prime}}^{\beta} \right| \psi \right\rangle - \left\langle \psi \left| \sigma_{l}^{\alpha} \right| \psi \right\rangle \left\langle \psi\left| \sigma_{l^{\prime}}^{\beta} \right| \psi \right\rangle
+\end{equation}
+
+Combining the above results renders us an efficient algorithm of calculating $ p $ for ground states of several many-body Hamiltonians. In detail, we start off by applying the reinforcement learning procedure until the RBM (in fact, a variant of the RBM in Eq. \eqref{eq:RBM} with lattice symmetry ``hard-wired'' into the RBM architecture to speed up the training) converges to a state with minimum energy. In the second phase, we use the Metropolis Markov Chain Monte Carlo algorithm to estimate the expectation values of one-local and two-local observables of the form $ \langle \sigma_l^{\alpha} \rangle $, $ \langle \sigma_{l}^{\alpha} \sigma_{l^{\prime}}^{\beta} \rangle $ for the converged RBM; Note that taking into consideration the existence of numerical errors and the fact that the gradient of the energy was estimated by stochastic methods in the first phase, we should keep ``training'' the RBM for adequate iterations, estimate the expectation values in each iteration and take the average to  the small fluctuations around the
+“ground state” within a small distance. As a result, we have to 
 
 
 \emph{Discussion and conclusion}\textemdash Discussion and conclusion
 
-\emph{Acknowledgment}\textemdash Acknowledgment
+\emph{Acknowledgment}\textemdash The code used in the current study is largely based on the open-sourced software NetKet \cite{Carleo2019netket}.
 
 % If in two-column mode, this environment will change to single-column
 % format so that long equations can be displayed. Use
